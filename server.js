@@ -9,27 +9,34 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SHOP_ID = process.env.SHOP_ID;
-const SECRET_KEY = process.env.SECRET_KEY;
+// ЮKassa credentials
+const SHOP_ID = process.env.SHOP_ID;      // ваш shopId из ЮKassa
+const SECRET_KEY = process.env.SECRET_KEY; // ваш секретный ключ
 
 // Создание платежа
 app.post("/create-payment", async (req, res) => {
   try {
+    const { amount, description, return_url } = req.body;
+    if (!amount || !return_url) {
+      return res.status(400).json({ error: "Не указаны обязательные параметры" });
+    }
+
+    // Генерация ключа идемпотентности
     const idempotenceKey = Math.random().toString(36).substring(2);
 
     const response = await axios.post(
       "https://api.yookassa.ru/v3/payments",
       {
         amount: {
-          value: "490.00",
+          value: amount.toFixed(2),
           currency: "RUB"
         },
         confirmation: {
           type: "redirect",
-          return_url: "https://vk.com/app54348330_-234056692?ref=group_menu" 
+          return_url
         },
         capture: true,
-        description: "Подписка Арины (1 месяц)"
+        description: description || "Оплата подписки"
       },
       {
         auth: {
@@ -47,15 +54,30 @@ app.post("/create-payment", async (req, res) => {
       confirmationUrl: response.data.confirmation.confirmation_url,
       paymentId: response.data.id
     });
-
   } catch (error) {
-    console.error("Ошибка создания платежа:", error.response?.data);
+    console.error("Ошибка создания платежа:", error.response?.data || error.message);
     res.status(500).json({ error: "Ошибка создания платежа" });
   }
 });
 
-// Запуск сервера
+// Проверка статуса платежа (по желанию)
+app.get("/payment-status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.yookassa.ru/v3/payments/${id}`, {
+      auth: {
+        username: SHOP_ID,
+        password: SECRET_KEY
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error("Ошибка проверки платежа:", error.response?.data || error.message);
+    res.status(500).json({ error: "Ошибка проверки платежа" });
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log(`Server running on port ${PORT}`);
 });
